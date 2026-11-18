@@ -4,6 +4,7 @@ from surface.mesh.barycentric import validate_sample
 from surface.results.codec import encode_payload, decode_payload, canonical_digest
 
 CONVENTION = "ordinary-surface-v1"
+STITCHED_CONVENTION = "stitched-surface-v1"
 
 
 @dataclass(frozen=True)
@@ -36,11 +37,12 @@ class PlanService:
         if type(request_id) is not str or not request_id:
             raise ValueError("nonempty plan request ID required")
         revision = self.revisions.read(revision_id)
+        convention = STITCHED_CONVENTION if revision.stitch is not None else CONVENTION
         if type(samples) not in (list, tuple):
             raise ValueError("ordered sample sequence required")
         normalized = [validate_sample(revision.mesh, item) for item in samples]
         binding = {"revision_id": revision_id, "source_digest": revision.fingerprint,
-                   "samples": normalized, "convention": CONVENTION}
+                   "samples": normalized, "convention": convention}
         raw = encode_payload(binding)
         with self.store.transaction():
             row = self.store.connection.execute(
@@ -71,11 +73,11 @@ class PlanService:
                     or canonical_digest(binding) != row[2]
                     or binding["revision_id"] != row[1]
                     or type(binding["revision_id"]) is not int
-                    or binding["convention"] != CONVENTION
+                    or binding["convention"] not in (CONVENTION, STITCHED_CONVENTION)
                     or type(binding["source_digest"]) is not str
                     or type(binding["samples"]) is not list):
                 raise ValueError("damaged or unsupported plan binding")
             return AnalysisPlan(plan_id, row[0], row[1], binding["source_digest"],
-                                tuple(binding["samples"]), CONVENTION, row[2])
+                                tuple(binding["samples"]), binding["convention"], row[2])
         except (KeyError, TypeError) as exc:
             raise ValueError("damaged analysis plan") from exc

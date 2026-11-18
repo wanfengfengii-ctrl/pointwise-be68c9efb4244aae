@@ -2,6 +2,7 @@ from dataclasses import dataclass
 from fractions import Fraction
 from types import MappingProxyType
 from surface.mesh.incidence import canonical_edge
+from surface.mesh.model import StitchedMesh
 
 
 def validate_coverage(mesh, values):
@@ -37,10 +38,45 @@ class FieldBundle:
     mesh: object
     values: FieldValues
 
-    def edge_value(self, start, end):
+    def _ordinary_edge_value(self, start, end):
         key = canonical_edge(start, end)
         value = self.values.edge_integrals[key]
         return value if (start, end) == key else -value
+
+    def _stitched_edge_value(self, start, end, edge_id):
+        nodes = self.mesh.nodes
+        if type(start) is not str or type(end) is not str:
+            raise KeyError((start, end))
+        if start not in nodes or end not in nodes:
+            raise KeyError((start, end))
+        if start == end:
+            raise ValueError("edge lookup requires two distinct node IDs")
+        integrals = self.values.edge_integrals
+        if edge_id is not None:
+            if type(edge_id) is not tuple or edge_id not in integrals:
+                raise KeyError(edge_id)
+            endpoints = self.mesh.edge_endpoints[edge_id]
+            if tuple(sorted((start, end))) != endpoints:
+                raise ValueError("endpoints do not belong to the requested edge")
+            value = integrals[edge_id]
+            return value if (start, end) == endpoints else -value
+        wanted = canonical_edge(start, end)
+        candidates = sorted(edge for edge, pair in self.mesh.edge_endpoints.items()
+                            if pair == wanted)
+        if not candidates:
+            raise KeyError((start, end))
+        if len(candidates) > 1:
+            raise ValueError("parallel edge selection requires explicit edge_id")
+        edge = candidates[0]
+        value = integrals[edge]
+        return value if (start, end) == wanted else -value
+
+    def edge_value(self, start, end, *, edge_id=None):
+        if isinstance(self.mesh, StitchedMesh):
+            return self._stitched_edge_value(start, end, edge_id)
+        if edge_id is not None:
+            raise ValueError("ordinary surface edges have no independent identity")
+        return self._ordinary_edge_value(start, end)
 
 
 def bind_fields(revision_id, mesh, values):

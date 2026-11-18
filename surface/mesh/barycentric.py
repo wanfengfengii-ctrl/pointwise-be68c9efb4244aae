@@ -16,7 +16,7 @@ def validate_sample(mesh, sample):
 
 def barycentric_position(mesh, sample):
     sample = validate_sample(mesh, sample)
-    vertices = mesh.faces[sample["face"]]
+    vertices = mesh.sample_vertices(sample["face"])
     return tuple(sum((weight * mesh.nodes[node][axis]
                       for weight, node in zip(sample["weights"], vertices)),
                      Fraction(0)) for axis in range(3))

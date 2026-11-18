@@ -17,7 +17,7 @@ class SampleValue:
 
 def interpolate_sample(bundle, sample):
     sample = validate_sample(bundle.mesh, sample)
-    vertices = bundle.mesh.faces[sample["face"]]
+    vertices = bundle.mesh.sample_vertices(sample["face"])
     value = sum((weight * bundle.values.node_scalars[node]
                  for weight, node in zip(sample["weights"], vertices)), Fraction(0))
     return SampleValue(sample["face"], sample["weights"],

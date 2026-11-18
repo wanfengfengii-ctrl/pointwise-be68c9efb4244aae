@@ -81,3 +81,13 @@ python3.11 -B -m surface.results.checking --demo samples/normal.json
 ## 代码职责
 
 sources 负责输入、修订、请求绑定和当前引用；mesh 负责三维几何、普通关联、边界链和重心定位；fields 负责完整字段绑定、插值、环流及核账；tasks 负责固定计划、确切输入解析、内存计算和统一发布；results 负责精确编码、固定载荷读取、导出和独立复核。24 个生产模块均接入上述公开链路。测试夹具围绕同一求解器批次，不在初始化时修改用户数据。
+
+## 显式缝合派生修订（V2）
+
+STITCHING.md 定义新增的 `SourceCatalog.build_stitched(source_revision, seams)`：只合并
+指定边界配对，未配对平行边保留独立身份，商顶点/商边按最小源 ID 命名，每个顶点邻域须为
+圆盘或半圆盘、全局可定向、各连通分量独立锚定且面总量不取反。派生修订可直接走原计划、
+采样、环流、读取、导出与显式边查询；读取导出只解析已保存关联，不重做缝合。
+实现细节与不变量见 STITCHING_INVARIANTS.md；`.pointwise-runtime.json` 的 verify 为
+`python3.11 -B verify_all.py`（原回归 + 缝合回归 + 联动检查），demo 为
+`python3.11 -B -m surface.results.stitched_demo`（含普通链与缝合链的真实演示）。

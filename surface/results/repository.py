@@ -2,10 +2,11 @@ from copy import deepcopy
 from dataclasses import dataclass
 from fractions import Fraction
 from surface.results.codec import encode_payload, decode_payload, canonical_digest
-from surface.mesh.model import OrdinaryMesh
+from surface.mesh.model import OrdinaryMesh, StitchedMesh
 from surface.sources.field_input import normalize_fields
 from surface.mesh.barycentric import validate_sample
-from surface.tasks.plans import CONVENTION
+from surface.tasks.plans import CONVENTION, STITCHED_CONVENTION
+from surface.mesh.stitch import validate_stitch_record
 
 
 def _fractions(mapping, identities):
@@ -19,20 +20,32 @@ def _validate(record):
              "face_totals", "balance"}
     if type(record) is not dict or set(record) != names:
         raise ValueError("invalid result structure")
-    if record["kind"] != "ordinary-analysis-v1":
+    kind = record["kind"]
+    if kind == "ordinary-analysis-v1":
+        convention, source_names = CONVENTION, {"mesh", "fields"}
+    elif kind == "stitched-analysis-v1":
+        convention, source_names = STITCHED_CONVENTION, {"mesh", "fields", "stitch"}
+    else:
         raise ValueError("unsupported result kind")
     binding, source = record["binding"], record["input"]
     if (type(binding) is not dict or set(binding) != {
             "plan_id", "plan_digest", "revision_id", "source_digest", "convention"}
             or any(type(binding[k]) is not int or binding[k] < 1
                    for k in ("plan_id", "revision_id"))
-            or binding["convention"] != CONVENTION
+            or binding["convention"] != convention
             or any(type(binding[k]) is not str for k in ("source_digest", "plan_digest"))
-            or type(source) is not dict or set(source) != {"mesh", "fields"}
+            or type(source) is not dict or set(source) != source_names
             or canonical_digest(source) != binding["source_digest"]):
         raise ValueError("invalid fixed source binding")
-    mesh = OrdinaryMesh.from_record(source["mesh"])
+    if kind == "ordinary-analysis-v1":
+        mesh = OrdinaryMesh.from_record(source["mesh"])
+    else:
+        if type(source["stitch"]) is not dict:
+            raise ValueError("invalid stitch record")
+        mesh = StitchedMesh.from_record(source["mesh"], source["stitch"])
     fields = normalize_fields(mesh, source["fields"])
+    if kind == "stitched-analysis-v1":
+        validate_stitch_record(source["stitch"], mesh, fields)
     requests = record["requests"]
     if type(requests) is not list:
         raise ValueError("ordered requests required")
@@ -41,7 +54,7 @@ def _validate(record):
         raise ValueError("noncanonical sample requests")
     plan_binding = {"revision_id": binding["revision_id"],
                     "source_digest": binding["source_digest"],
-                    "samples": requests, "convention": CONVENTION}
+                    "samples": requests, "convention": convention}
     if canonical_digest(plan_binding) != binding["plan_digest"]:
         raise ValueError("invalid fixed plan binding")
     samples = record["samples"]
